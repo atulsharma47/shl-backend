@@ -1,7 +1,7 @@
-streamlit
-openai
-pandas
 fastapi
 uvicorn
+pandas
+fuzzywuzzy
+python-Levenshtein
 
 
