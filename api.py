@@ -2,14 +2,21 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import pandas as pd
 import os
-from fuzzywuzzy import fuzz  # Optional but useful for better matching
+
+# Optional fuzzy matching
+try:
+    from fuzzywuzzy import fuzz
+    FUZZY_AVAILABLE = True
+except ImportError:
+    FUZZY_AVAILABLE = False
 
 app = FastAPI()
 
-# Load the CSV file
-csv_path = r"C:\Users\hp\Desktop\shl-assessment-recommender\shl_assessments.csv"
-df = None
+# Use relative path to locate the CSV
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+csv_path = os.path.join(BASE_DIR, "shl_assessments.csv")
 
+df = None
 if os.path.exists(csv_path):
     df = pd.read_csv(csv_path)
     print("✅ CSV loaded successfully.")
@@ -25,7 +32,6 @@ else:
 class Query(BaseModel):
     query: str
 
-# Root route
 @app.get("/")
 def read_root():
     return {
@@ -40,7 +46,6 @@ def read_root():
         }
     }
 
-# Recommend route
 @app.post("/recommend")
 def recommend_assessments(query: Query):
     if df is None:
@@ -51,14 +56,14 @@ def recommend_assessments(query: Query):
 
     user_query = query.query.lower()
 
-    # Case-insensitive match using contains
+    # Basic matching
     matched_df = df[
         df['Assessment Name'].str.lower().str.contains(user_query) |
         df['Test Type'].str.lower().str.contains(user_query)
     ]
 
-    # Optional: fuzzy matching fallback if no results found
-    if matched_df.empty:
+    # Fallback: fuzzy matching if available and no results
+    if matched_df.empty and FUZZY_AVAILABLE:
         def fuzzy_match(row):
             name_score = fuzz.partial_ratio(user_query, str(row['Assessment Name']).lower())
             type_score = fuzz.partial_ratio(user_query, str(row['Test Type']).lower())
