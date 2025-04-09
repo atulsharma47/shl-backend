@@ -68,7 +68,7 @@ def read_root():
 # ✅ Recommend assessments
 @app.post("/recommend")
 def recommend_assessments(query: Query):
-    print("👉 /recommend called with query:", query)  # 4.  Is /recommend even being called?
+    print("👉 /recommend called with query:", query)  # 4. Is /recommend even being called?
     if df is None:
         print("❌ DataFrame is None!")
         return {"recommended_assessments": []}
@@ -114,6 +114,11 @@ def recommend_assessments(query: Query):
     results = []
     for _, row in matched_df.head(10).iterrows():
         raw_description = row.get("Description")
+        
+        # Check for empty or NaN descriptions before cleaning
+        if pd.isna(raw_description) or not raw_description:
+            raw_description = "No description available."
+        
         print(f"Before clean_description: {raw_description=}")  # 5. Raw description
         result = {
             "url": row.get("URL", "https://www.shl.com"),
