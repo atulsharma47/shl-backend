@@ -87,7 +87,15 @@ def recommend_assessments(query: Query):
 
     # ✅ Format final SHL-compliant results
     results = []
-
     for _, row in matched_df.head(10).iterrows():
         result = {
-            "url": row.get("URL", "https://www.shl.com
+            "url": row.get("URL", "https://www.shl.com"),
+            "adaptive_support": row.get("Adaptive Support", "No"),
+            "description": row.get("Description", "No description available."),
+            "duration": int(row.get("Duration (min)", 0)),
+            "remote_support": row.get("Remote Support", "No"),
+            "test_type": [str(row.get("Test Type", "Other"))]
+        }
+        results.append(result)
+
+    return {"recommended_assessments": results}
