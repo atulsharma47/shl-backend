@@ -42,24 +42,14 @@ def read_root():
         }
     }
 
-# Function to clean up and handle missing descriptions
-def clean_description(desc):
-    if not desc or pd.isna(desc) or desc.strip() == "":
-        return "No description available."
-    return desc.strip()
-
 # ✅ SHL-Compliant Recommend Endpoint
 @app.post("/recommend")
 def recommend_assessments(query: Query):
     if df is None:
         return {"recommended_assessments": []}
 
-    # Check required columns
-    required_columns = ['Assessment Name', 'Test Type']
-    missing_columns = [col for col in required_columns if col not in df.columns]
-    
-    if missing_columns:
-        return {"error": f"CSV missing required columns: {', '.join(missing_columns)}"}
+    if 'Assessment Name' not in df.columns:
+        return {"error": "Assessment Name column missing from CSV."}
 
     user_query = query.query.lower()
 
@@ -68,7 +58,6 @@ def recommend_assessments(query: Query):
         df['Assessment Name'].str.lower().str.contains(user_query) |
         df['Test Type'].str.lower().str.contains(user_query)
     ]
-    print("Matched dataframe after basic matching:\n", matched_df)
 
     # Fuzzy fallback
     if matched_df.empty:
@@ -79,7 +68,6 @@ def recommend_assessments(query: Query):
 
         df["score"] = df.apply(fuzzy_match, axis=1)
         matched_df = df[df["score"] > 60].sort_values(by="score", ascending=False)
-        print("Matched dataframe after fuzzy matching:\n", matched_df)
 
     if matched_df.empty:
         return {"recommended_assessments": []}
@@ -87,12 +75,10 @@ def recommend_assessments(query: Query):
     results = []
 
     for _, row in matched_df.head(10).iterrows():
-        # Check for Description column before accessing
-        description = row.get("Description", "No description available.")
         result = {
             "url": row.get("URL", "https://www.shl.com"),
             "adaptive_support": row.get("Adaptive Support", "No"),
-            "description": clean_description(description),
+            "description": row.get("Description", "No description available."),
             "duration": int(row.get("Duration (min)", 0)),
             "remote_support": row.get("Remote Support", "No"),
             "test_type": [str(row.get("Test Type", "Other"))]
