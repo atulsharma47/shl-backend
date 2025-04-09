@@ -2,36 +2,32 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import pandas as pd
 import os
-
-# Optional fuzzy matching
-try:
-    from fuzzywuzzy import fuzz
-    FUZZY_AVAILABLE = True
-except ImportError:
-    FUZZY_AVAILABLE = False
+from fuzzywuzzy import fuzz
 
 app = FastAPI()
 
-# Use relative path to locate the CSV
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-csv_path = os.path.join(BASE_DIR, "shl_assessments.csv")
-
+# Load CSV
+csv_path = r"C:\Users\hp\Desktop\shl-assessment-recommender\shl_assessments.csv"
 df = None
+
 if os.path.exists(csv_path):
     df = pd.read_csv(csv_path)
     print("✅ CSV loaded successfully.")
     print("Current working directory:", os.getcwd())
-    print("Normalized CSV Columns:", df.columns)
-    if 'Assessment Name' in df.columns:
-        print("Sample assessment names:")
-        print(df['Assessment Name'].head(10))
+    print("CSV Columns:", df.columns)
 else:
-    print("❌ CSV file not found at path:", csv_path)
+    print("❌ CSV file not found at:", csv_path)
 
-# Define request body using Pydantic
+# Request body model
 class Query(BaseModel):
     query: str
 
+# ✅ Health Check Endpoint
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+
+# Root route (optional, kept for context)
 @app.get("/")
 def read_root():
     return {
@@ -46,13 +42,14 @@ def read_root():
         }
     }
 
+# ✅ SHL-Compliant Recommend Endpoint
 @app.post("/recommend")
 def recommend_assessments(query: Query):
     if df is None:
-        return {"error": "CSV file not loaded."}
+        return {"recommended_assessments": []}
 
-    if 'Assessment Name' not in df.columns or 'Test Type' not in df.columns:
-        return {"error": "Required columns not found in CSV."}
+    if 'Assessment Name' not in df.columns:
+        return {"error": "Assessment Name column missing from CSV."}
 
     user_query = query.query.lower()
 
@@ -62,18 +59,30 @@ def recommend_assessments(query: Query):
         df['Test Type'].str.lower().str.contains(user_query)
     ]
 
-    # Fallback: fuzzy matching if available and no results
-    if matched_df.empty and FUZZY_AVAILABLE:
+    # Fuzzy fallback
+    if matched_df.empty:
         def fuzzy_match(row):
             name_score = fuzz.partial_ratio(user_query, str(row['Assessment Name']).lower())
-            type_score = fuzz.partial_ratio(user_query, str(row['Test Type']).lower())
+            type_score = fuzz.partial_ratio(user_query, str(row.get('Test Type', '')).lower())
             return max(name_score, type_score)
 
         df["score"] = df.apply(fuzzy_match, axis=1)
         matched_df = df[df["score"] > 60].sort_values(by="score", ascending=False)
 
     if matched_df.empty:
-        return {"message": "No assessments matched your query."}
+        return {"recommended_assessments": []}
 
-    recommendations = matched_df.head(5).drop(columns=["score"], errors="ignore").to_dict(orient="records")
-    return {"recommendations": recommendations}
+    results = []
+
+    for _, row in matched_df.head(10).iterrows():
+        result = {
+            "url": row.get("URL", "https://www.shl.com"),
+            "adaptive_support": row.get("Adaptive Support", "No"),
+            "description": row.get("Description", "No description available."),
+            "duration": int(row.get("Duration (min)", 0)),
+            "remote_support": row.get("Remote Support", "No"),
+            "test_type": [str(row.get("Test Type", "Other"))]
+        }
+        results.append(result)
+
+    return {"recommended_assessments": results}
