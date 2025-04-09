@@ -54,18 +54,30 @@ def recommend_assessments(query: Query):
 
     user_query = query.query.lower()
 
-    # ✅ Case-insensitive substring matching
+    # ✅ First try simple substring matching
     matched_df = df[
         df['Assessment Name'].str.lower().str.contains(user_query, na=False) |
         df['Test Type'].str.lower().str.contains(user_query, na=False)
     ]
 
-    # ✅ Fuzzy fallback if nothing matched
+    # ✅ If no match, apply keyword expansion & fuzzy matching
     if matched_df.empty:
+        # Expand keywords based on common synonyms
+        extra_keywords = {
+            "coding": ["programming", "developer", "test", "technical"],
+            "python": ["coding", "scripting"],
+            "data": ["analysis", "analytics"],
+            "reasoning": ["logic", "verbal", "numerical"],
+        }
+
+        query_keywords = user_query.split()
+        expanded_terms = query_keywords.copy()
+        for word in query_keywords:
+            expanded_terms += extra_keywords.get(word, [])
+
         def fuzzy_match(row):
-            name_score = fuzz.partial_ratio(user_query, str(row['Assessment Name']).lower())
-            type_score = fuzz.partial_ratio(user_query, str(row.get('Test Type', '')).lower())
-            return max(name_score, type_score)
+            text = f"{row['Assessment Name']} {row.get('Test Type', '')}".lower()
+            return max(fuzz.partial_ratio(term, text) for term in expanded_terms)
 
         df["score"] = df.apply(fuzzy_match, axis=1)
         matched_df = df[df["score"] > 60].sort_values(by="score", ascending=False)
@@ -78,13 +90,4 @@ def recommend_assessments(query: Query):
 
     for _, row in matched_df.head(10).iterrows():
         result = {
-            "url": row.get("URL", "https://www.shl.com"),
-            "adaptive_support": row.get("Adaptive Support", "No"),
-            "description": row.get("Description", "No description available."),
-            "duration": int(row.get("Duration (min)", 0)),
-            "remote_support": row.get("Remote Support", "No"),
-            "test_type": [str(row.get("Test Type", "Other"))]
-        }
-        results.append(result)
-
-    return {"recommended_assessments": results}
+            "url": row.get("URL", "https://www.shl.com
