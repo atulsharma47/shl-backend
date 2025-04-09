@@ -12,11 +12,15 @@ df = None
 
 # ✅ Load CSV with validation
 if os.path.exists(csv_path):
-    df = pd.read_csv(csv_path)
-    df.columns = df.columns.str.strip()  # ✅ Clean column names
-    print("✅ CSV loaded successfully.")
-    print("Sample rows:")
-    print(df[['Assessment Name', 'Test Type']].head())
+    try:
+        df = pd.read_csv(csv_path)
+        df.columns = df.columns.str.strip()  # ✅ Clean column names
+        print("✅ CSV loaded successfully.")
+        print("CSV Columns:", df.columns)  # 1. Print ALL columns
+        print("Sample rows:")
+        print(df[['Assessment Name', 'Test Type', 'Description']].head())  # Show 'Description' too
+    except Exception as e:
+        print(f"❌ Error loading CSV: {e}")
 else:
     print(f"❌ CSV file not found at: {csv_path}")
 
@@ -26,6 +30,10 @@ class Query(BaseModel):
 
 # ✅ Clean up repeated or redundant phrases in the description
 def clean_description(desc: str) -> str:
+    print(f"clean_description IN: {desc=}")  # 2. Print input to clean_description
+    if not desc or pd.isna(desc):  # Handle None or NaN
+        print("clean_description: Returning empty string")
+        return ""
     desc = desc.lower().strip()
     desc = desc.replace("assessment assessment", "assessment")
     desc = desc.replace("test test", "test")
@@ -33,7 +41,9 @@ def clean_description(desc: str) -> str:
     desc = desc.replace("test assessment", "assessment")
     desc = desc.replace("skills and abilities skills and abilities", "skills and abilities")
     desc = desc.replace("assessment skills and abilities assessment skills and abilities", "assessment skills and abilities")
-    return desc[0].upper() + desc[1:] if desc else desc
+    cleaned_desc = desc[0].upper() + desc[1:]
+    print(f"clean_description OUT: {cleaned_desc=}")  # 3. Print output of clean_description
+    return cleaned_desc
 
 # ✅ Health Check
 @app.get("/health")
@@ -58,10 +68,13 @@ def read_root():
 # ✅ Recommend assessments
 @app.post("/recommend")
 def recommend_assessments(query: Query):
+    print("👉 /recommend called with query:", query)  # 4.  Is /recommend even being called?
     if df is None:
+        print("❌ DataFrame is None!")
         return {"recommended_assessments": []}
 
-    if 'Assessment Name' not in df.columns or 'Test Type' not in df.columns:
+    if 'Assessment Name' not in df.columns or 'Test Type' not in df.columns or 'Description' not in df.columns:
+        print("❌ CSV missing required columns!")
         return {"error": "CSV missing required columns."}
 
     user_query = query.query.lower()
@@ -94,19 +107,23 @@ def recommend_assessments(query: Query):
         matched_df = df[df["score"] > 60].sort_values(by="score", ascending=False)
 
     if matched_df.empty:
+        print("❌ No matching assessments found.")
         return {"recommended_assessments": []}
 
     # ✅ Format final SHL-compliant results
     results = []
     for _, row in matched_df.head(10).iterrows():
+        raw_description = row.get("Description")
+        print(f"Before clean_description: {raw_description=}")  # 5. Raw description
         result = {
             "url": row.get("URL", "https://www.shl.com"),
             "adaptive_support": row.get("Adaptive Support", "No"),
-            "description": clean_description(row.get("Description", "No description available.")),
+            "description": clean_description(raw_description),
             "duration": int(row.get("Duration (min)", 0)),
             "remote_support": row.get("Remote Support", "No"),
             "test_type": [str(row.get("Test Type", "Other"))]
         }
         results.append(result)
+        print("Result object:", result)  # 6. Final result object
 
     return {"recommended_assessments": results}
