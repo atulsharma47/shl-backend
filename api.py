@@ -6,52 +6,28 @@ from fuzzywuzzy import fuzz
 
 app = FastAPI()
 
-# ✅ Use relative path so it works on Render & locally
-csv_path = os.path.join(os.path.dirname(__file__), "shl_assessments.csv")
+# Load CSV
+csv_path = r"C:\Users\hp\Desktop\shl-assessment-recommender\shl_assessments.csv"
 df = None
 
-# ✅ Load CSV with validation
 if os.path.exists(csv_path):
-    try:
-        df = pd.read_csv(csv_path)
-        df.columns = df.columns.str.strip()  # ✅ Clean column names
-        print("✅ CSV loaded successfully.")
-        print(f"CSV Shape: {df.shape}")  # Log the shape of the DataFrame
-        print("CSV Columns:", df.columns)  # Log columns to ensure they are loaded correctly
-        print("Sample rows:")
-        print(df[['Assessment Name', 'Test Type', 'Description']].head())  # Show 'Description' too
-    except Exception as e:
-        print(f"❌ Error loading CSV: {e}")
+    df = pd.read_csv(csv_path)
+    print("✅ CSV loaded successfully.")
+    print("Current working directory:", os.getcwd())
+    print("CSV Columns:", df.columns)
 else:
-    print(f"❌ CSV file not found at: {csv_path}")
+    print("❌ CSV file not found at:", csv_path)
 
-# ✅ Request model
+# Request body model
 class Query(BaseModel):
     query: str
 
-# ✅ Clean up repeated or redundant phrases in the description
-def clean_description(desc: str) -> str:
-    print(f"clean_description IN: {desc=}")  # Debug input to clean_description
-    if not desc or pd.isna(desc):  # Handle None or NaN
-        print("clean_description: Returning empty string")
-        return "No description available."
-    desc = desc.strip()  # Strip any extra spaces
-    desc = desc.replace("assessment assessment", "assessment")
-    desc = desc.replace("test test", "test")
-    desc = desc.replace("assessment test", "test")
-    desc = desc.replace("test assessment", "assessment")
-    desc = desc.replace("skills and abilities skills and abilities", "skills and abilities")
-    desc = desc.replace("assessment skills and abilities assessment skills and abilities", "assessment skills and abilities")
-    cleaned_desc = desc[0].upper() + desc[1:]
-    print(f"clean_description OUT: {cleaned_desc=}")  # Debug output of clean_description
-    return cleaned_desc
-
-# ✅ Health Check
+# ✅ Health Check Endpoint
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
 
-# ✅ Root route
+# Root route (optional, kept for context)
 @app.get("/")
 def read_root():
     return {
@@ -66,77 +42,53 @@ def read_root():
         }
     }
 
-# ✅ Recommend assessments
+# Function to clean up and handle missing descriptions
+def clean_description(desc):
+    if not desc or pd.isna(desc) or desc.strip() == "":
+        return "No description available."
+    return desc.strip()
+
+# ✅ SHL-Compliant Recommend Endpoint
 @app.post("/recommend")
 def recommend_assessments(query: Query):
-    print("👉 /recommend called with query:", query)  # Debug query received
     if df is None:
-        print("❌ DataFrame is None!")
         return {"recommended_assessments": []}
 
-    # Check for missing required columns
-    required_columns = ['Assessment Name', 'Test Type', 'Description']
-    missing_columns = [col for col in required_columns if col not in df.columns]
-
-    if missing_columns:
-        print(f"❌ Missing required columns: {', '.join(missing_columns)}")
-        return {"error": f"CSV missing required columns: {', '.join(missing_columns)}."}
+    if 'Assessment Name' not in df.columns:
+        return {"error": "Assessment Name column missing from CSV."}
 
     user_query = query.query.lower()
 
-    # First try simple substring matching
+    # Basic matching
     matched_df = df[
-        df['Assessment Name'].str.lower().str.contains(user_query, na=False) |
-        df['Test Type'].str.lower().str.contains(user_query, na=False)
+        df['Assessment Name'].str.lower().str.contains(user_query) |
+        df['Test Type'].str.lower().str.contains(user_query)
     ]
 
-    # If no match, apply keyword expansion & fuzzy matching
+    # Fuzzy fallback
     if matched_df.empty:
-        extra_keywords = {
-            "coding": ["programming", "developer", "test", "technical"],
-            "python": ["coding", "scripting"],
-            "data": ["analysis", "analytics"],
-            "reasoning": ["logic", "verbal", "numerical"],
-        }
-
-        query_keywords = user_query.split()
-        expanded_terms = query_keywords.copy()
-        for word in query_keywords:
-            expanded_terms += extra_keywords.get(word, [])
-
         def fuzzy_match(row):
-            text = f"{row['Assessment Name']} {row.get('Test Type', '')}".lower()
-            scores = [fuzz.partial_ratio(term, text) for term in expanded_terms]
-            max_score = max(scores)
-            print(f"Fuzzy match scores: {scores} -> Max score: {max_score}")  # Log fuzzy scores
-            return max_score
+            name_score = fuzz.partial_ratio(user_query, str(row['Assessment Name']).lower())
+            type_score = fuzz.partial_ratio(user_query, str(row.get('Test Type', '')).lower())
+            return max(name_score, type_score)
 
         df["score"] = df.apply(fuzzy_match, axis=1)
         matched_df = df[df["score"] > 60].sort_values(by="score", ascending=False)
 
     if matched_df.empty:
-        print("❌ No matching assessments found.")
         return {"recommended_assessments": []}
 
-    # Format final SHL-compliant results
     results = []
+
     for _, row in matched_df.head(10).iterrows():
-        raw_description = row.get("Description")
-
-        # Check for empty or NaN descriptions before cleaning
-        if pd.isna(raw_description) or not raw_description:
-            raw_description = "No description available."
-
-        print(f"Before clean_description: {raw_description=}")  # Log raw description before cleaning
         result = {
             "url": row.get("URL", "https://www.shl.com"),
             "adaptive_support": row.get("Adaptive Support", "No"),
-            "description": clean_description(raw_description),
+            "description": clean_description(row.get("Description", "")),
             "duration": int(row.get("Duration (min)", 0)),
             "remote_support": row.get("Remote Support", "No"),
             "test_type": [str(row.get("Test Type", "Other"))]
         }
         results.append(result)
-        print("Result object:", result)  # Log final result object
 
     return {"recommended_assessments": results}
