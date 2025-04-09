@@ -13,6 +13,7 @@ df = None
 # ✅ Load CSV with validation
 if os.path.exists(csv_path):
     df = pd.read_csv(csv_path)
+    df.columns = df.columns.str.strip()  # ✅ Clean column names
     print("✅ CSV loaded successfully.")
     print("Sample rows:")
     print(df[['Assessment Name', 'Test Type']].head())
@@ -22,6 +23,17 @@ else:
 # ✅ Request model
 class Query(BaseModel):
     query: str
+
+# ✅ Clean up repeated or redundant phrases in the description
+def clean_description(desc: str) -> str:
+    desc = desc.lower().strip()
+    desc = desc.replace("assessment assessment", "assessment")
+    desc = desc.replace("test test", "test")
+    desc = desc.replace("assessment test", "test")
+    desc = desc.replace("test assessment", "assessment")
+    desc = desc.replace("skills and abilities skills and abilities", "skills and abilities")
+    desc = desc.replace("assessment skills and abilities assessment skills and abilities", "assessment skills and abilities")
+    return desc[0].upper() + desc[1:] if desc else desc
 
 # ✅ Health Check
 @app.get("/health")
@@ -62,7 +74,6 @@ def recommend_assessments(query: Query):
 
     # ✅ If no match, apply keyword expansion & fuzzy matching
     if matched_df.empty:
-        # Expand keywords based on common synonyms
         extra_keywords = {
             "coding": ["programming", "developer", "test", "technical"],
             "python": ["coding", "scripting"],
@@ -91,7 +102,7 @@ def recommend_assessments(query: Query):
         result = {
             "url": row.get("URL", "https://www.shl.com"),
             "adaptive_support": row.get("Adaptive Support", "No"),
-            "description": row.get("Description", "No description available."),
+            "description": clean_description(row.get("Description", "No description available.")),
             "duration": int(row.get("Duration (min)", 0)),
             "remote_support": row.get("Remote Support", "No"),
             "test_type": [str(row.get("Test Type", "Other"))]
