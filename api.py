@@ -68,6 +68,7 @@ def recommend_assessments(query: Query):
         df['Assessment Name'].str.lower().str.contains(user_query) |
         df['Test Type'].str.lower().str.contains(user_query)
     ]
+    print("Matched dataframe after basic matching:\n", matched_df)
 
     # Fuzzy fallback
     if matched_df.empty:
@@ -78,6 +79,7 @@ def recommend_assessments(query: Query):
 
         df["score"] = df.apply(fuzzy_match, axis=1)
         matched_df = df[df["score"] > 60].sort_values(by="score", ascending=False)
+        print("Matched dataframe after fuzzy matching:\n", matched_df)
 
     if matched_df.empty:
         return {"recommended_assessments": []}
