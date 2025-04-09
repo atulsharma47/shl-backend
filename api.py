@@ -54,8 +54,10 @@ def recommend_assessments(query: Query):
     if df is None:
         return {"recommended_assessments": []}
 
-    if 'Assessment Name' not in df.columns:
-        return {"error": "Assessment Name column missing from CSV."}
+    required_columns = ['Assessment Name', 'Test Type']
+    # Check if required columns exist
+    if not all(col in df.columns for col in required_columns):
+        return {"error": f"CSV missing required columns: {', '.join(required_columns)}"}
 
     user_query = query.query.lower()
 
@@ -81,10 +83,12 @@ def recommend_assessments(query: Query):
     results = []
 
     for _, row in matched_df.head(10).iterrows():
+        # Handle missing 'Description' column gracefully
+        description = row.get("Description", None)
         result = {
             "url": row.get("URL", "https://www.shl.com"),
             "adaptive_support": row.get("Adaptive Support", "No"),
-            "description": clean_description(row.get("Description", "")),
+            "description": clean_description(description),
             "duration": int(row.get("Duration (min)", 0)),
             "remote_support": row.get("Remote Support", "No"),
             "test_type": [str(row.get("Test Type", "Other"))]
