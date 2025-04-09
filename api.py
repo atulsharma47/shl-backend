@@ -6,28 +6,29 @@ from fuzzywuzzy import fuzz
 
 app = FastAPI()
 
-# Load CSV
-csv_path = r"C:\Users\hp\Desktop\shl-assessment-recommender\shl_assessments.csv"
+# ✅ Use relative path so it works on Render & locally
+csv_path = os.path.join(os.path.dirname(__file__), "shl_assessments.csv")
 df = None
 
+# ✅ Load CSV with validation
 if os.path.exists(csv_path):
     df = pd.read_csv(csv_path)
     print("✅ CSV loaded successfully.")
-    print("Current working directory:", os.getcwd())
-    print("CSV Columns:", df.columns)
+    print("Sample rows:")
+    print(df[['Assessment Name', 'Test Type']].head())
 else:
-    print("❌ CSV file not found at:", csv_path)
+    print(f"❌ CSV file not found at: {csv_path}")
 
-# Request body model
+# ✅ Request model
 class Query(BaseModel):
     query: str
 
-# ✅ Health Check Endpoint
+# ✅ Health Check
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
 
-# Root route (optional, kept for context)
+# ✅ Root route
 @app.get("/")
 def read_root():
     return {
@@ -42,24 +43,24 @@ def read_root():
         }
     }
 
-# ✅ SHL-Compliant Recommend Endpoint
+# ✅ Recommend assessments
 @app.post("/recommend")
 def recommend_assessments(query: Query):
     if df is None:
         return {"recommended_assessments": []}
 
-    if 'Assessment Name' not in df.columns:
-        return {"error": "Assessment Name column missing from CSV."}
+    if 'Assessment Name' not in df.columns or 'Test Type' not in df.columns:
+        return {"error": "CSV missing required columns."}
 
     user_query = query.query.lower()
 
-    # Basic matching
+    # ✅ Case-insensitive substring matching
     matched_df = df[
-        df['Assessment Name'].str.lower().str.contains(user_query) |
-        df['Test Type'].str.lower().str.contains(user_query)
+        df['Assessment Name'].str.lower().str.contains(user_query, na=False) |
+        df['Test Type'].str.lower().str.contains(user_query, na=False)
     ]
 
-    # Fuzzy fallback
+    # ✅ Fuzzy fallback if nothing matched
     if matched_df.empty:
         def fuzzy_match(row):
             name_score = fuzz.partial_ratio(user_query, str(row['Assessment Name']).lower())
@@ -72,6 +73,7 @@ def recommend_assessments(query: Query):
     if matched_df.empty:
         return {"recommended_assessments": []}
 
+    # ✅ Format final SHL-compliant results
     results = []
 
     for _, row in matched_df.head(10).iterrows():
